@@ -114,6 +114,7 @@ pub enum SocketEvent<A> {
 }
 
 /// A sans-I/O multiplexer of SOE sessions, keyed by remote address.
+#[derive(Debug)]
 pub struct SoeMultiplexer<A: RemoteAddr> {
     config: SocketConfig,
     sessions: HashMap<A, SoeSession>,
@@ -166,6 +167,7 @@ impl<A: RemoteAddr> SoeMultiplexer<A> {
 
     /// Enqueues application data to be sent reliably to `remote`. Returns `false` if
     /// there is no running session for that address.
+    #[must_use = "a false return means the data was dropped because no running session exists for the address"]
     pub fn enqueue_data(&mut self, remote: &A, data: &[u8]) -> bool {
         let queued = match self.sessions.get_mut(remote) {
             Some(session) => session.enqueue_data(data),
@@ -451,7 +453,7 @@ mod tests {
 
         // The server opens its session on the first packet after responding, so nudge
         // it with a data packet from the client.
-        client.enqueue_data(&addr(SERVER), b"hi");
+        assert!(client.enqueue_data(&addr(SERVER), b"hi"));
         pump(&mut client, &mut server);
         assert!(server.take_events().iter().any(|e| matches!(
             e,

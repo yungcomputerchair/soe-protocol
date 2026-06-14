@@ -30,6 +30,7 @@ const RECV_BUFFER_SIZE: usize = 2048;
 /// single read-or-tick cycle and returns any [`SocketEvent`]s produced. Sessions are
 /// initiated with [`connect`](TokioSoeSocket::connect) and data is sent with
 /// [`enqueue_data`](TokioSoeSocket::enqueue_data).
+#[derive(Debug)]
 pub struct TokioSoeSocket {
     mux: SoeMultiplexer<SocketAddr>,
     socket: UdpSocket,
@@ -130,7 +131,7 @@ enum Command {
 ///
 /// Each method returns `false` if the server's driver loop has stopped (e.g. the
 /// [`TokioSoeServer`] was dropped), in which case the command was not delivered.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SoeHandle {
     commands: mpsc::UnboundedSender<Command>,
 }
@@ -182,6 +183,7 @@ impl SoeHandle {
 ///
 /// The driver task runs until the [`TokioSoeServer`] **and** every [`SoeHandle`] are
 /// dropped, or until the event receiver is dropped.
+#[derive(Debug)]
 pub struct TokioSoeServer {
     handle: SoeHandle,
     events: mpsc::UnboundedReceiver<SocketEvent<SocketAddr>>,
@@ -278,7 +280,10 @@ async fn drive_loop(
                 match command {
                     Some(Command::Connect(remote)) => mux.connect(remote, Instant::now()),
                     Some(Command::EnqueueData { remote, data }) => {
-                        mux.enqueue_data(&remote, &data);
+                        // Fire-and-forget: if no running session exists for `remote`
+                        // the data is dropped (the handle API is intentionally async
+                        // and can't synchronously report this).
+                        let _ = mux.enqueue_data(&remote, &data);
                     }
                     Some(Command::Terminate { remote, reason }) => {
                         mux.terminate(&remote, reason, Instant::now());

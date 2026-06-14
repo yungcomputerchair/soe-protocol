@@ -85,12 +85,14 @@ pub struct OutgoingContextual {
     pub sequence: u16,
 }
 
+#[derive(Debug)]
 struct Stashed {
     data: Bytes,
     is_fragment: bool,
 }
 
 /// Handles reliable data packets, extracting the proxied application data in order.
+#[derive(Debug)]
 pub struct ReliableDataInputChannel {
     config: InputConfig,
     cipher: Option<Rc4KeyState>,

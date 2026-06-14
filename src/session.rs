@@ -125,6 +125,7 @@ pub struct ApplicationParameters {
 }
 
 /// A small linear-congruential generator used to produce session IDs and CRC seeds.
+#[derive(Debug)]
 struct Lcg {
     state: u64,
 }
@@ -146,6 +147,7 @@ impl Lcg {
 }
 
 /// A sans-I/O handler for a single SOE protocol session.
+#[derive(Debug)]
 pub struct SoeSession {
     mode: SessionMode,
     state: SessionState,
@@ -296,6 +298,7 @@ impl SoeSession {
 
     /// Enqueues application data to be sent reliably. Returns `false` if the session
     /// is not running.
+    #[must_use = "a false return means the data was dropped because the session is not running"]
     pub fn enqueue_data(&mut self, data: &[u8]) -> bool {
         if self.state != SessionState::Running {
             return false;
@@ -741,7 +744,7 @@ mod tests {
         assert!(client.take_events().contains(&SessionEvent::Opened));
         // The server only opens the session once it receives its first packet after
         // sending the response (matching the C# reference). Drive one more packet.
-        client.enqueue_data(b"hi");
+        assert!(client.enqueue_data(b"hi"));
         client.run_tick(now);
         pump(&mut client, &mut server, now);
         assert!(server.take_events().contains(&SessionEvent::Opened));
@@ -807,8 +810,8 @@ mod tests {
         let to_server = generate(1500);
         let to_client = generate(800);
 
-        client.enqueue_data(&to_server);
-        server.enqueue_data(&to_client);
+        assert!(client.enqueue_data(&to_server));
+        assert!(server.enqueue_data(&to_client));
         client.run_tick(now);
         server.run_tick(now);
         pump(&mut client, &mut server, now);
@@ -891,7 +894,7 @@ mod tests {
         pump(&mut client, &mut server, now);
 
         let data = generate(1200);
-        client.enqueue_data(&data);
+        assert!(client.enqueue_data(&data));
         client.run_tick(now);
         pump(&mut client, &mut server, now);
 

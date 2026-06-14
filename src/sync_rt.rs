@@ -25,6 +25,7 @@ const RECV_BUFFER_SIZE: usize = 2048;
 /// single read-or-tick cycle and returns any [`SocketEvent`]s produced. The socket
 /// is given a read timeout equal to the tick period, so `step` returns promptly when
 /// a datagram arrives and otherwise wakes once per tick to run housekeeping.
+#[derive(Debug)]
 pub struct SyncSoeSocket {
     mux: SoeMultiplexer<SocketAddr>,
     socket: UdpSocket,

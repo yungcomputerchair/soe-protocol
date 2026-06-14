@@ -78,6 +78,7 @@ pub struct OutgoingReliable {
     pub payload: Bytes,
 }
 
+#[derive(Debug)]
 struct StashedOutputPacket {
     is_fragment: bool,
     data: Bytes,
@@ -85,6 +86,7 @@ struct StashedOutputPacket {
 }
 
 /// Converts application data into ordered, fragmented reliable data packets.
+#[derive(Debug)]
 pub struct ReliableDataOutputChannel {
     config: OutputConfig,
     cipher: Option<Rc4KeyState>,

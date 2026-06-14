@@ -55,7 +55,7 @@ fn ping_pong_over_real_udp() {
                 assert_eq!(data, format!("ping {server_echoes}").as_bytes());
                 server_echoes += 1;
                 // Echo the ping straight back.
-                server.enqueue_data(&remote, &data);
+                assert!(server.enqueue_data(&remote, &data));
             }
         }
 
@@ -63,15 +63,22 @@ fn ping_pong_over_real_udp() {
             match event {
                 SocketEvent::SessionOpened { .. } if !client_opened => {
                     client_opened = true;
-                    client.enqueue_data(&server_addr, format!("ping {client_sends}").as_bytes());
+                    assert!(
+                        client
+                            .enqueue_data(&server_addr, format!("ping {client_sends}").as_bytes())
+                    );
                     client_sends += 1;
                 }
                 SocketEvent::DataReceived { data, .. } => {
                     assert_eq!(data, format!("ping {client_echoes_seen}").as_bytes());
                     client_echoes_seen += 1;
                     if client_sends < ROUNDS {
-                        client
-                            .enqueue_data(&server_addr, format!("ping {client_sends}").as_bytes());
+                        assert!(
+                            client.enqueue_data(
+                                &server_addr,
+                                format!("ping {client_sends}").as_bytes()
+                            )
+                        );
                         client_sends += 1;
                     }
                 }

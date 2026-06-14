@@ -298,6 +298,12 @@ impl<A: RemoteAddr> SoeMultiplexer<A> {
 
     /// Moves a session's pending datagrams, received data, and events into the given
     /// multiplexer buffers, tagging each with `remote`.
+    ///
+    /// Events are ordered so that a session's [`SocketEvent::SessionOpened`] is always
+    /// surfaced before any of its [`SocketEvent::DataReceived`], and its
+    /// [`SocketEvent::SessionClosed`] always after. This lets consumers that key
+    /// per-session state on lifecycle events (e.g. spawning a task on open) reliably
+    /// have that state in place before the session's data arrives.
     fn drain_into(
         remote: &A,
         session: &mut SoeSession,
@@ -307,22 +313,31 @@ impl<A: RemoteAddr> SoeMultiplexer<A> {
         for datagram in session.take_outgoing() {
             outgoing.push((remote.clone(), datagram));
         }
+
+        let session_events = session.take_events();
+
+        for event in &session_events {
+            if matches!(event, SessionEvent::Opened) {
+                events.push(SocketEvent::SessionOpened {
+                    remote: remote.clone(),
+                });
+            }
+        }
+
         for data in session.take_received() {
             events.push(SocketEvent::DataReceived {
                 remote: remote.clone(),
                 data,
             });
         }
-        for event in session.take_events() {
-            events.push(match event {
-                SessionEvent::Opened => SocketEvent::SessionOpened {
-                    remote: remote.clone(),
-                },
-                SessionEvent::Closed(reason) => SocketEvent::SessionClosed {
+
+        for event in session_events {
+            if let SessionEvent::Closed(reason) = event {
+                events.push(SocketEvent::SessionClosed {
                     remote: remote.clone(),
                     reason,
-                },
-            });
+                });
+            }
         }
     }
 

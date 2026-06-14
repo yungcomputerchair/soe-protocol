@@ -32,3 +32,5 @@ pub use session::{
 };
 pub use socket::{RemoteAddr, SocketConfig, SocketEvent, SoeMultiplexer, SoeSocket, UdpTransport};
 pub use sync_rt::SyncSoeSocket;
+#[cfg(feature = "tokio")]
+pub use tokio_rt::{SoeHandle, TokioSoeServer, TokioSoeSocket};

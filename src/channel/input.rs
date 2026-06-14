@@ -156,7 +156,7 @@ impl ReliableDataInputChannel {
             || to_ack >= self.last_ack_all_sequence + (self.config.data_ack_window / 2) as i64;
 
         if need_ack {
-            self.send_ack_all(to_ack as u16, now);
+            self.send_ack_all(to_ack, now);
         }
     }
 
@@ -185,10 +185,10 @@ impl ReliableDataInputChannel {
         self.outgoing.push(OutgoingContextual { op_code, sequence });
     }
 
-    fn send_ack_all(&mut self, sequence: u16, now: Instant) {
-        self.emit(OpCode::AcknowledgeAll, sequence);
+    fn send_ack_all(&mut self, sequence: i64, now: Instant) {
+        self.emit(OpCode::AcknowledgeAll, sequence as u16);
         self.stats.acknowledge_count += 1;
-        self.last_ack_all_sequence = sequence as i64;
+        self.last_ack_all_sequence = sequence;
         self.last_ack_all_time = now;
     }
 
@@ -253,7 +253,7 @@ impl ReliableDataInputChannel {
 
         // Already processed: nudge the remote, but not too frequently.
         if now.duration_since(self.last_ack_all_time) < self.config.max_ack_delay {
-            self.send_ack_all((self.window_start_sequence - 1) as u16, now);
+            self.send_ack_all(self.window_start_sequence - 1, now);
         }
         self.stats.duplicate_count += 1;
         None
@@ -642,5 +642,46 @@ mod tests {
     fn multi_data() {
         run_multi_data(true);
         run_multi_data(false);
+    }
+
+    /// Regression test for the long-connection sequence-wraparound bug: once the
+    /// window advances past the 16-bit boundary, the ack-all throttle must keep
+    /// working. Previously `last_ack_all_sequence` stored only the truncated 16-bit
+    /// wire value while `to_ack` was the full sequence, so after wraparound the two
+    /// could never compare equal and the channel emitted a redundant `AcknowledgeAll`
+    /// on every single tick for the rest of the connection.
+    #[test]
+    fn ack_all_throttled_after_sequence_wraparound() {
+        let mut clock = Clock::new();
+        // Not ack-all-per-packet mode, so ack-alls come from run_tick.
+        let mut ch = new_channel(&clock, false);
+
+        // Feed enough in-order reliable packets to push the window past 2^16.
+        let total: u32 = 65_540;
+        for i in 0..total {
+            let (pkt, _) = data_fragment((i & 0xFFFF) as u16, None, DATA_LENGTH);
+            ch.handle_reliable_data(Bytes::copy_from_slice(&pkt), clock.tick());
+            // Drop accumulated acks/app-data to keep memory bounded.
+            ch.take_outgoing();
+            ch.take_app_data();
+        }
+
+        // First tick after the data: a single ack-all for the current window is
+        // expected (and arms the throttle).
+        ch.run_tick(clock.tick());
+        let first = ch.take_outgoing();
+        assert_eq!(first.len(), 1, "expected exactly one ack-all");
+        assert_eq!(first[0].op_code, OpCode::AcknowledgeAll);
+        assert_eq!(first[0].sequence, ((total - 1) & 0xFFFF) as u16);
+
+        // No new data has arrived, so subsequent ticks must NOT re-emit an ack-all.
+        // (max_ack_delay is ZERO in the test config, so any emission here is the bug.)
+        for _ in 0..5 {
+            ch.run_tick(clock.tick());
+            assert!(
+                ch.take_outgoing().is_empty(),
+                "ack-all throttle broke after wraparound: redundant ack emitted"
+            );
+        }
     }
 }

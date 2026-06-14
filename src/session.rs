@@ -23,13 +23,14 @@ use crate::constants::{
     DEFAULT_UDP_LENGTH, SOE_PROTOCOL_VERSION,
 };
 use crate::crc32::Crc32;
-use crate::io::BinaryWriter;
+use crate::io::{BinaryReader, BinaryWriter};
 use crate::packet_utils::{ValidationResult, append_crc, read_op_code, validate_packet};
 use crate::packets::{
     Acknowledge, AcknowledgeAll, Disconnect, SessionRequest, SessionResponse,
 };
 use crate::protocol::{DisconnectReason, OpCode};
 use crate::rc4::Rc4KeyState;
+use crate::varint::multi_packet;
 use crate::zlib;
 
 const OP_CODE_SIZE: usize = 2;
@@ -445,14 +446,6 @@ impl SoeSession {
             }
         };
 
-        self.params.remote_udp_length = response.udp_length;
-        self.params.crc_length = response.crc_length;
-        self.params.crc_seed = response.crc_seed;
-        self.params.is_compression_enabled = response.is_compression_enabled;
-        self.session_id = response.session_id;
-        self.output
-            .set_max_data_length(Self::max_data_length(&self.params));
-
         if self.state != SessionState::Negotiating {
             self.terminate_inner(DisconnectReason::ConnectError, true, false, now);
             return;
@@ -462,6 +455,14 @@ impl SoeSession {
             self.terminate_inner(DisconnectReason::ProtocolMismatch, true, false, now);
             return;
         }
+
+        self.params.remote_udp_length = response.udp_length;
+        self.params.crc_length = response.crc_length;
+        self.params.crc_seed = response.crc_seed;
+        self.params.is_compression_enabled = response.is_compression_enabled;
+        self.session_id = response.session_id;
+        self.output
+            .set_max_data_length(Self::max_data_length(&self.params));
 
         self.state = SessionState::Running;
         self.events.push(SessionEvent::Opened);
@@ -497,8 +498,8 @@ impl SoeSession {
             OpCode::MultiPacket => {
                 let mut offset = 0;
                 while offset < body.len() {
-                    let mut reader = crate::io::BinaryReader::new(&body[offset..]);
-                    let len = match crate::varint::multi_packet::read(&mut reader) {
+                    let mut reader = BinaryReader::new(&body[offset..]);
+                    let len = match multi_packet::read(&mut reader) {
                         Ok(l) => l as usize,
                         Err(_) => {
                             self.terminate_inner(
